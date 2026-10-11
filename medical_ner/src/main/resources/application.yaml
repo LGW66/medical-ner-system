@@ -13,5 +13,5 @@ mybatis:
   type-aliases-package: com.example.medical_ner.entity
 
 deepseek:
-  api-key: sk-85a766ba8446451c8fc39b57f3693ec5
+  api-key: sk-XXXXXXXXXXXXXXXXXXXXX
   api-url: https://api.deepseek.com/chat/completions
