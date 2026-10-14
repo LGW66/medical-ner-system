@@ -5,8 +5,10 @@ import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.example.medical_ner.entity.EntityRelation;
 import com.example.medical_ner.entity.EntityResult;
 import com.example.medical_ner.entity.RecognitionRecord;
+import com.example.medical_ner.mapper.EntityRelationMapper;
 import com.example.medical_ner.mapper.EntityResultMapper;
 import com.example.medical_ner.mapper.RecognitionRecordMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +27,9 @@ public class NerService {
     private String apiUrl;
 
     @Autowired
+    private EntityRelationMapper entityRelationMapper;
+
+    @Autowired
     private RecognitionRecordMapper recognitionRecordMapper;
 
     @Autowired
@@ -32,8 +37,10 @@ public class NerService {
 
     public String recognize(String text) {
         // 1. 构造请求体
-        String prompt = "请识别这段医疗文本中的疾病、药物、症状，以JSON格式返回，" +
-                "格式为{\"entities\":[{\"text\":\"实体内容\",\"type\":\"实体类型\"}]}。文本：" + text;
+        String prompt = "请识别以下医疗文本中的疾病、药物、症状，并抽取实体间关系，" +
+                "以JSON格式返回，格式为：{\"entities\":[{\"text\":\"实体内容\",\"type\":\"实体类型\"}]," +
+                "\"relations\":[{\"source\":\"源实体\",\"target\":\"目标实体\",\"relation\":\"关系类型\"}]}。" +
+                "文本：" + text;
 
         JSONObject message = new JSONObject();
         message.set("role", "user");
@@ -92,7 +99,26 @@ public class NerService {
             System.out.println("警告：entities 为 null，返回内容为：" + content);
         }
 
-        // 7. 返回结果
-        return content;
+        // 7. 解析关系并保存
+        JSONArray relations = contentJson.getJSONArray("relations");
+        if (relations != null) {
+            for (int i = 0; i < relations.size(); i++) {
+                JSONObject rel = relations.getJSONObject(i);
+                EntityRelation relation = new EntityRelation();
+                relation.setRecordId(record.getId());
+                relation.setSourceEntity(rel.getStr("source"));
+                relation.setTargetEntity(rel.getStr("target"));
+                relation.setRelationType(rel.getStr("relation"));
+                entityRelationMapper.insert(relation);
+            }
+        } else {
+            System.out.println("警告：relations 为 null，返回内容为：" + content);
+        }
+
+        // 8. 返回结果（带上 recordId）
+        JSONObject result = new JSONObject();
+        result.set("recordId", record.getId());
+        result.set("content", content);
+        return result.toString();
     }
 }

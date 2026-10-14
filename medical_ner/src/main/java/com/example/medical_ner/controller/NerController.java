@@ -1,12 +1,19 @@
 package com.example.medical_ner.controller;
 
+import com.example.medical_ner.entity.EntityRelation;
+import com.example.medical_ner.entity.EntityResult;
 import com.example.medical_ner.entity.RecognitionRecord;
+import com.example.medical_ner.mapper.EntityRelationMapper;
+import com.example.medical_ner.mapper.EntityResultMapper;
 import com.example.medical_ner.mapper.RecognitionRecordMapper;
 import com.example.medical_ner.service.NerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -19,6 +26,12 @@ public class NerController {
     @Autowired
     private RecognitionRecordMapper recognitionRecordMapper;
 
+    @Autowired
+    private EntityResultMapper entityResultMapper;
+
+    @Autowired
+    private EntityRelationMapper entityRelationMapper;
+
     @GetMapping("/test-db")
     public String testDb() {
         RecognitionRecord record = new RecognitionRecord();
@@ -26,6 +39,34 @@ public class NerController {
         record.setCreateTime(LocalDateTime.now());
         recognitionRecordMapper.insert(record);
         return "插入成功，ID=" + record.getId();
+    }
+
+    @GetMapping("/graph/{recordId}")
+    public Map<String, Object> getGraph(@PathVariable Long recordId) {
+        List<EntityResult> entities = entityResultMapper.selectByRecordId(recordId);
+        List<EntityRelation> relations = entityRelationMapper.selectByRecordId(recordId);
+
+        List<Map<String, String>> nodes = new ArrayList<>();
+        for (EntityResult e : entities) {
+            Map<String, String> node = new HashMap<>();
+            node.put("name", e.getEntityText());
+            node.put("category", e.getEntityType());
+            nodes.add(node);
+        }
+
+        List<Map<String, String>> links = new ArrayList<>();
+        for (EntityRelation r : relations) {
+            Map<String, String> link = new HashMap<>();
+            link.put("source", r.getSourceEntity());
+            link.put("target", r.getTargetEntity());
+            link.put("relation", r.getRelationType());
+            links.add(link);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("nodes", nodes);
+        result.put("links", links);
+        return result;
     }
 
     @PostMapping("/recognize")

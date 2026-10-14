@@ -1,6 +1,6 @@
 <template>
   <div style="padding: 20px; font-family: Arial;">
-    <h1>医疗NER可视化系统</h1>
+    <h1>医疗NER与知识图谱问答系统</h1>
 
     <textarea
       v-model="inputText"
@@ -32,7 +32,6 @@
     </table>
     <p v-else>暂无识别结果</p>
 
-    <!-- 图表区域 -->
     <div v-if="entities.length > 0" style="display: flex; gap: 40px; margin-top: 30px;">
       <div>
         <h3>实体类型统计</h3>
@@ -42,6 +41,11 @@
         <h3>实体类型占比</h3>
         <div ref="pieChartRef" style="width: 400px; height: 300px;"></div>
       </div>
+    </div>
+
+    <div v-if="entities.length > 0" style="margin-top: 30px;">
+      <h3>知识图谱</h3>
+      <div ref="graphChartRef" style="width: 800px; height: 500px;"></div>
     </div>
   </div>
 </template>
@@ -55,6 +59,7 @@ const inputText = ref('')
 const entities = ref([])
 const barChartRef = ref(null)
 const pieChartRef = ref(null)
+const graphChartRef = ref(null)
 
 const submitText = async () => {
   if (!inputText.value.trim()) {
@@ -65,19 +70,32 @@ const submitText = async () => {
     const res = await axios.post('http://localhost:8080/api/ner/recognize', {
       text: inputText.value
     })
-    const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
-    entities.value = data.entities || []
 
-    // 等 DOM 更新后再渲染图表
+    const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+    const content = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
+    entities.value = content.entities || []
+
+    // 等 DOM 更新后再渲染柱状图、饼图
     await nextTick()
     renderCharts()
+
+    // 获取知识图谱数据
+    const graphRes = await axios.get(`http://localhost:8080/api/ner/graph/${data.recordId}`)
+
+    // 再等一次 DOM 更新，确保知识图谱容器已渲染
+    await nextTick()
+    renderGraph(graphRes.data)
   } catch (err) {
     alert('请求失败：' + err.message)
   }
 }
 
 const renderCharts = () => {
-  // 统计每种类型的数量
+  if (!barChartRef.value || !pieChartRef.value) {
+    console.error('柱状图或饼图容器还没渲染出来')
+    return
+  }
+
   const typeCount = {}
   entities.value.forEach(e => {
     typeCount[e.type] = (typeCount[e.type] || 0) + 1
@@ -85,20 +103,14 @@ const renderCharts = () => {
   const types = Object.keys(typeCount)
   const counts = Object.values(typeCount)
 
-  // 柱状图
   const barChart = echarts.init(barChartRef.value)
   barChart.setOption({
     tooltip: { trigger: 'axis' },
     xAxis: { type: 'category', data: types },
     yAxis: { type: 'value' },
-    series: [{
-      type: 'bar',
-      data: counts,
-      itemStyle: { color: '#5470c6' }
-    }]
+    series: [{ type: 'bar', data: counts, itemStyle: { color: '#5470c6' } }]
   })
 
-  // 饼图
   const pieChart = echarts.init(pieChartRef.value)
   pieChart.setOption({
     tooltip: { trigger: 'item' },
@@ -109,6 +121,52 @@ const renderCharts = () => {
       emphasis: {
         itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' }
       }
+    }]
+  })
+}
+
+const renderGraph = (graphData) => {
+  if (!graphChartRef.value) {
+    console.error('知识图谱容器还没渲染出来')
+    return
+  }
+
+  const graphChart = echarts.init(graphChartRef.value)
+
+  const categories = [...new Set(graphData.nodes.map(n => n.category))]
+  const categoryIndex = {}
+  categories.forEach((c, i) => { categoryIndex[c] = i })
+
+  graphChart.setOption({
+    tooltip: {
+      formatter: (params) => {
+        if (params.dataType === 'node') {
+          return `实体：${params.data.name}<br/>类型：${params.data.category}`
+        } else {
+          return `关系：${params.data.relation}`
+        }
+      }
+    },
+    legend: [{ data: categories }],
+    series: [{
+      type: 'graph',
+      layout: 'force',
+      roam: true,
+      draggable: true,
+      label: { show: true },
+      force: { repulsion: 300, edgeLength: 150 },
+      data: graphData.nodes.map(n => ({
+        name: n.name,
+        category: categoryIndex[n.category],
+        symbolSize: 50
+      })),
+      links: graphData.links.map(l => ({
+        source: l.source,
+        target: l.target,
+        relation: l.relation,
+        label: { show: true, formatter: l.relation }
+      })),
+      categories: categories.map(c => ({ name: c }))
     }]
   })
 }
