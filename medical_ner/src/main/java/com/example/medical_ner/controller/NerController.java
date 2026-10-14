@@ -74,4 +74,10 @@ public class NerController {
         String text = request.get("text");
         return nerService.recognize(text);
     }
+
+    @PostMapping("/rag/ask")
+    public String ask(@RequestBody Map<String, String> request) {
+        String question = request.get("question");
+        return nerService.ask(question);
+    }
 }

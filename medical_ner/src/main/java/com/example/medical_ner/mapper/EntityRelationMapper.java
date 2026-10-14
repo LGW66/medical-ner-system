@@ -16,4 +16,7 @@ public interface EntityRelationMapper {
 
     @Select("SELECT * FROM entity_relation WHERE record_id = #{recordId}")
     List<EntityRelation> selectByRecordId(Long recordId);
+
+    @Select("SELECT * FROM entity_relation")
+    List<EntityRelation> selectAll();
 }

@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class NerService {
@@ -120,5 +121,54 @@ public class NerService {
         result.set("recordId", record.getId());
         result.set("content", content);
         return result.toString();
+    }
+    public String ask(String question) {
+        // 1. 从问题里抽取关键词（简单做法：让 DeepSeek 从问题里抽出实体名）
+        // 2. 用关键词去 entity_relation 表里查相关关系
+        // 3. 把检索到的三元组拼进提示词，交给 DeepSeek 生成回答
+
+        // 简单实现：直接用问题去查所有关系，然后交给 DeepSeek 筛选
+        List<EntityRelation> allRelations = entityRelationMapper.selectAll();
+
+        StringBuilder graphContext = new StringBuilder();
+        graphContext.append("以下是知识图谱中已知的医疗关系：\n");
+        for (EntityRelation rel : allRelations) {
+            graphContext.append(rel.getSourceEntity()).append(" - ")
+                    .append(rel.getRelationType()).append(" - ")
+                    .append(rel.getTargetEntity()).append("\n");
+        }
+
+        String prompt = "你是一个医疗问答助手。请根据下面提供的知识图谱信息回答用户问题。" +
+                "如果知识图谱中没有相关信息，就基于你的医学知识回答，但不要编造。\n\n" +
+                graphContext.toString() + "\n" +
+                "用户问题：" + question;
+
+        JSONObject message = new JSONObject();
+        message.set("role", "user");
+        message.set("content", prompt);
+
+        JSONArray messages = new JSONArray();
+        messages.add(message);
+
+        JSONObject body = new JSONObject();
+        body.set("model", "deepseek-chat");
+        body.set("messages", messages);
+
+        HttpResponse response = HttpRequest.post(apiUrl)
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .body(body.toString())
+                .timeout(60000)
+                .execute();
+
+        String responseBody = response.body();
+        JSONObject jsonResponse = JSONUtil.parseObj(responseBody);
+        String answer = jsonResponse
+                .getJSONArray("choices")
+                .getJSONObject(0)
+                .getJSONObject("message")
+                .getStr("content");
+
+        return answer;
     }
 }

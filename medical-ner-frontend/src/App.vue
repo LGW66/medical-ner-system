@@ -47,6 +47,26 @@
       <h3>知识图谱</h3>
       <div ref="graphChartRef" style="width: 800px; height: 500px;"></div>
     </div>
+
+    <!-- 智能问答区域 -->
+    <div style="margin-top: 40px;">
+      <h3>智能问答</h3>
+      <input
+        v-model="question"
+        placeholder="请输入问题，例如：阿莫西林治什么？"
+        style="width: 400px; padding: 8px; font-size: 14px;"
+      />
+      <button @click="askQuestion" style="padding: 8px 20px; margin-left: 10px;">
+        提问
+      </button>
+      <div
+        v-if="answer"
+        style="margin-top: 15px; padding: 15px; background: #f5f5f5; border-radius: 8px; max-width: 700px; white-space: pre-wrap;"
+      >
+        <strong>回答：</strong>
+        <p>{{ answer }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -60,6 +80,9 @@ const entities = ref([])
 const barChartRef = ref(null)
 const pieChartRef = ref(null)
 const graphChartRef = ref(null)
+
+const question = ref('')
+const answer = ref('')
 
 const submitText = async () => {
   if (!inputText.value.trim()) {
@@ -75,16 +98,27 @@ const submitText = async () => {
     const content = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
     entities.value = content.entities || []
 
-    // 等 DOM 更新后再渲染柱状图、饼图
     await nextTick()
     renderCharts()
 
-    // 获取知识图谱数据
     const graphRes = await axios.get(`http://localhost:8080/api/ner/graph/${data.recordId}`)
-
-    // 再等一次 DOM 更新，确保知识图谱容器已渲染
     await nextTick()
     renderGraph(graphRes.data)
+  } catch (err) {
+    alert('请求失败：' + err.message)
+  }
+}
+
+const askQuestion = async () => {
+  if (!question.value.trim()) {
+    alert('请输入问题')
+    return
+  }
+  try {
+    const res = await axios.post('http://localhost:8080/api/ner/rag/ask', {
+      question: question.value
+    })
+    answer.value = res.data
   } catch (err) {
     alert('请求失败：' + err.message)
   }
