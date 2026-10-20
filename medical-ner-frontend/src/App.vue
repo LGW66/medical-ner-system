@@ -1,6 +1,17 @@
 <template>
   <div style="padding: 20px; font-family: Arial;">
-    <h1>医疗NER与知识图谱问答系统</h1>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 20px;">
+      <h2>医疗知识图谱问答系统</h2>
+      <div v-if="!currentUser">
+        <input v-model="loginForm.username" placeholder="用户名 (admin)" style="padding: 4px;" />
+        <input v-model="loginForm.password" type="password" placeholder="密码 (123456)" style="padding: 4px; margin-left: 5px;" />
+        <button @click="doLogin" style="margin-left: 5px;">登录</button>
+      </div>
+      <div v-else>
+        欢迎，{{ currentUser.username }} ({{ currentUser.role }})
+        <button @click="doLogout" style="margin-left: 10px;">退出</button>
+      </div>
+    </div>
 
     <textarea
       v-model="inputText"
@@ -67,11 +78,23 @@
         <p>{{ answer }}</p>
       </div>
     </div>
+
+    <div style="margin-top: 40px; border-top: 1px solid #ccc; padding-top: 20px;">
+      <h3>历史记录</h3>
+      <button @click="loadHistory" style="margin-bottom: 10px;">刷新历史</button>
+      <ul>
+        <li v-for="record in historyList" :key="record.id" style="margin-bottom: 10px;">
+          <strong>ID: {{ record.id }}</strong> - {{ record.originalText }}
+          <span style="color: #888; font-size: 12px;">({{ record.createTime }})</span>
+          <button @click="deleteRecord(record.id)" style="margin-left: 10px; color: red;">删除</button>
+        </li>
+      </ul>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted } from 'vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
 
@@ -83,6 +106,27 @@ const graphChartRef = ref(null)
 
 const question = ref('')
 const answer = ref('')
+const loginForm = ref({ username: '', password: '' })
+const currentUser = ref(null)
+const historyList = ref([])
+
+const doLogin = async () => {
+  try {
+    const res = await axios.post('http://localhost:8080/api/user/login', loginForm.value)
+    if (res.data.success) {
+      currentUser.value = { username: res.data.username, role: res.data.role }
+      alert('登录成功')
+    } else {
+      alert(res.data.message)
+    }
+  } catch (err) {
+    alert('网络错误')
+  }
+}
+
+const doLogout = () => {
+  currentUser.value = null
+}
 
 const submitText = async () => {
   if (!inputText.value.trim()) {
@@ -123,6 +167,29 @@ const askQuestion = async () => {
     alert('请求失败：' + err.message)
   }
 }
+
+const loadHistory = async () => {
+  try {
+    const res = await axios.get('http://localhost:8080/api/history/list')
+    console.log('获取到的历史记录：', res.data)
+    historyList.value = JSON.parse(JSON.stringify(res.data))
+  } catch (err) {
+    console.error(err)
+    alert('刷新失败，请查看控制台')
+  }
+}
+
+const deleteRecord = async (id) => {
+  if (!confirm('确定删除吗？')) return
+  try {
+    await axios.delete(`http://localhost:8080/api/history/delete/${id}`)
+    await loadHistory()
+  } catch (err) {
+    alert('删除失败')
+  }
+}
+
+onMounted(loadHistory)
 
 const renderCharts = () => {
   if (!barChartRef.value || !pieChartRef.value) {

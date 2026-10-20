@@ -1,6 +1,7 @@
 package com.example.medical_ner.mapper;
 
 import com.example.medical_ner.entity.EntityResult;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Select;
@@ -16,4 +17,7 @@ public interface EntityResultMapper {
 
     @Select("SELECT * FROM entity_result WHERE record_id = #{recordId}")
     List<EntityResult> selectByRecordId(Long recordId);
+
+    @Delete("DELETE FROM entity_result WHERE record_id = #{recordId}")
+    int deleteByRecordId(Long recordId);
 }
