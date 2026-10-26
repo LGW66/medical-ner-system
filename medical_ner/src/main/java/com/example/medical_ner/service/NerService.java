@@ -57,24 +57,58 @@ public class NerService {
      * persist 为 false 时只识别不入库（批量评测用），避免测试数据污染图谱；默认 persist 为 true，原有行为不变。
      */
     public String recognize(String text, boolean persist) {
-        String prompt = "你是医疗信息抽取助手。请从下面的医疗文本中抽取医疗实体以及实体之间的关系，严格遵守以下规则：\n"
+        // 第一步：只做实体识别。单独使用实体提示词，避免关系谓词被误当成实体类型输出
+        String entityPrompt = "你是医疗命名实体识别助手。请从下面的医疗文本中识别医疗实体，严格遵守以下规则：\n"
                 + "1. 实体类型 type 只能从以下 9 类中选择：" + ENTITY_TYPES + "。\n"
-                + "2. 医疗实体存在嵌套现象，例如\"非持续性室上性心动过速\"内部还包含\"室上性心动过速\"，此时内外层实体都要分别输出。\n"
-                + "3. 关系 relation 只能从以下谓词表中选择：" + RELATION_PREDICATES + "。\n"
-                + "4. 只输出一个 JSON 对象，不要输出任何解释或 markdown 代码块标记，格式必须严格为：\n"
-                + "{\"entities\":[{\"text\":\"实体内容\",\"type\":\"实体类型\"}],\"relations\":[{\"source\":\"源实体\",\"target\":\"目标实体\",\"relation\":\"关系谓词\"}]}\n"
-                + "5. 没有抽取到实体或关系时，对应数组输出空数组 []。\n"
+                + "2. 实体边界必须完整：实体要包含完整的修饰语和限定成分，不要截断或省略。"
+                + "例如应输出\"上方的巩膜外露\"而不是\"巩膜外露\"，应输出\"小儿惊厥\"而不是\"惊厥\"，应输出\"继发性巨血小板症\"而不是\"血小板症\"。\n"
+                + "3. 医疗实体存在嵌套现象，例如\"非持续性室上性心动过速\"内部还包含\"室上性心动过速\"，此时内外层实体都要分别输出。\n"
+                + "4. 不要输出\"多发群体\"\"预后状况\"\"遗传因素\"这类关系名称作为实体类型，实体类型只能是上面 9 类之一。\n"
+                + "5. 只输出一个 JSON 对象，不要输出任何解释或 markdown 代码块标记，格式必须严格为：\n"
+                + "{\"entities\":[{\"text\":\"实体内容\",\"type\":\"实体类型\"}]}\n"
+                + "6. 没有识别到实体时输出空数组 []。\n"
                 + "医疗文本：" + text;
 
-        String content = callDeepSeek(prompt, true);
+        JSONArray entities = parseArray(callDeepSeek(entityPrompt, true), "entities");
 
-        // 清理可能残留的 markdown 代码块标记
-        content = content.replace("```json", "").replace("```", "").trim();
+        // 第二步：只做关系抽取，把第一步识别出的实体作为候选实体传入，并约束关系方向
+        JSONArray relations = new JSONArray();
+        if (entities != null && !entities.isEmpty()) {
+            StringBuilder entityList = new StringBuilder();
+            for (int i = 0; i < entities.size(); i++) {
+                JSONObject e = entities.getJSONObject(i);
+                if (i > 0) {
+                    entityList.append("、");
+                }
+                entityList.append(e.getStr("text")).append("(").append(e.getStr("type")).append(")");
+            }
 
-        // 先解析，解析失败时不会往数据库写入半截数据
-        JSONObject contentJson = JSONUtil.parseObj(content);
-        JSONArray entities = contentJson.getJSONArray("entities");
-        JSONArray relations = contentJson.getJSONArray("relations");
+            String relationPrompt = "你是医疗关系抽取助手。请从医疗文本中抽取下面已识别实体之间的关系，严格遵守以下规则：\n"
+                    + "1. 关系的 source 和 target 必须严格来自已识别实体列表，不要输出列表之外的实体。\n"
+                    + "已识别实体：" + entityList + "\n"
+                    + "2. 关系 relation 只能从以下谓词表中选择：" + RELATION_PREDICATES + "。\n"
+                    + "3. 方向约束：关系是有方向的，必须按医学语义确定主客体顺序。大多数关系的 subject 应该是疾病实体，"
+                    + "例如应输出\"脑炎-辅助治疗-血浆置换\"，而不是\"血浆置换-辅助治疗-脑炎\"；"
+                    + "object 是该疾病对应的症状、药物、检查项目、身体部位等。只有\"同义词\"\"鉴别诊断\"\"相关（症状）\"这类双向关系可以互换主客体。\n"
+                    + "4. 只输出文本中明确表述的关系，不要依据医学常识补充或推测文本中没有出现的关系。\n"
+                    + "5. 只输出一个 JSON 对象，不要输出任何解释或 markdown 代码块标记，格式必须严格为：\n"
+                    + "{\"relations\":[{\"source\":\"源实体\",\"target\":\"目标实体\",\"relation\":\"关系谓词\"}]}\n"
+                    + "6. 没有抽取到关系时输出空数组 []。\n"
+                    + "医疗文本：" + text;
+
+            try {
+                relations = parseArray(callDeepSeek(relationPrompt, true), "relations");
+            } catch (Exception e) {
+                // 关系抽取失败时降级为空关系，不影响实体识别结果
+                System.out.println("关系抽取失败，降级为不输出关系：" + e.getMessage());
+            }
+        }
+
+        // 合并两次调用的结果，对外返回格式保持不变
+        JSONObject contentJson = new JSONObject();
+        contentJson.set("entities", entities == null ? new JSONArray() : entities);
+        contentJson.set("relations", relations);
+        String content = contentJson.toString();
 
         Long recordId = null;
         if (persist) {
@@ -219,5 +253,16 @@ public class NerService {
                 .getJSONObject(0)
                 .getJSONObject("message")
                 .getStr("content");
+    }
+
+    /**
+     * 解析模型返回的 JSON 字符串，取出指定字段的数组；清理可能残留的 markdown 代码块标记。
+     * 字段不存在时返回空数组，便于后续统一处理。
+     */
+    private JSONArray parseArray(String content, String key) {
+        content = content.replace("```json", "").replace("```", "").trim();
+        JSONObject obj = JSONUtil.parseObj(content);
+        JSONArray arr = obj.getJSONArray(key);
+        return arr == null ? new JSONArray() : arr;
     }
 }
