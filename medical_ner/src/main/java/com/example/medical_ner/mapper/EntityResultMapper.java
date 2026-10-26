@@ -20,4 +20,8 @@ public interface EntityResultMapper {
 
     @Delete("DELETE FROM entity_result WHERE record_id = #{recordId}")
     int deleteByRecordId(Long recordId);
+
+    // 清空全部实体数据（测试后清理用）
+    @Delete("DELETE FROM entity_result")
+    int deleteAll();
 }

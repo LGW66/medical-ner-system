@@ -70,9 +70,15 @@ public class NerController {
     }
 
     @PostMapping("/recognize")
-    public String recognize(@RequestBody Map<String, String> request) {
-        String text = request.get("text");
-        return nerService.recognize(text);
+    public String recognize(@RequestBody Map<String, Object> request) {
+        Object textObj = request.get("text");
+        String text = textObj == null ? null : textObj.toString().trim();
+        if (text == null || text.isEmpty()) {
+            return "{\"error\":\"text 不能为空\"}";
+        }
+        // 默认保存识别结果；批量评测时可传 {"persist": false}，只识别不入库，避免测试数据污染图谱
+        boolean persist = !Boolean.FALSE.equals(request.get("persist"));
+        return nerService.recognize(text, persist);
     }
 
     @PostMapping("/rag/ask")

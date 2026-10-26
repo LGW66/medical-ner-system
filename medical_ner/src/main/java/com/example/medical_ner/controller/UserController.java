@@ -56,6 +56,23 @@ public class UserController {
         return recognitionRecordMapper.selectAll();
     }
 
+    // 清空全部识别数据（关系、实体、记录），用于批量测试后一键清理，避免测试数据污染演示图谱
+    @PostMapping("/history/clear")
+    @Transactional
+    public Map<String, Object> clearHistory() {
+        // 先删子表，再删主表
+        int relations = entityRelationMapper.deleteAll();
+        int entities = entityResultMapper.deleteAll();
+        int records = recognitionRecordMapper.deleteAll();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", true);
+        result.put("relationsDeleted", relations);
+        result.put("entitiesDeleted", entities);
+        result.put("recordsDeleted", records);
+        return result;
+    }
+
     // 修改后的删除历史记录接口
     @DeleteMapping("/history/delete/{id}")
     @Transactional // 加上事务注解，保证要么一起删成功，要么一起失败

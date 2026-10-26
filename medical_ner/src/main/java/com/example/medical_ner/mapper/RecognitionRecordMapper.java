@@ -17,4 +17,8 @@ public interface RecognitionRecordMapper {
 
     @Delete("DELETE FROM recognition_record WHERE id = #{id}")
     int deleteById(Long id);
+
+    // 清空全部识别记录（测试后清理用）
+    @Delete("DELETE FROM recognition_record")
+    int deleteAll();
 }
